@@ -1,0 +1,50 @@
+---
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: just fail
+        run: |
+          false
+
+      - name: on failure start a reverse tunnel process and sleep to connect via tcp
+        if: failure()
+        env:
+          BORE_SERVER: ${{ vars.BORE_SERVER }}
+          BORE_SECRET: ${{ secrets.BORE_SECRET }}
+        run: |
+          test ! -n "$BORE_SERVER" && echo "BORE_SERVER not set" && exit 1
+          test ! -n "$BORE_SECRET" && echo "BORE_SECRET not set" && exit 1
+
+          sudo apt update
+          sudo apt install -y curl ncat
+
+          curl -L https://github.com/ekzhang/bore/releases/download/v0.5.1/bore-v0.5.1-x86_64-unknown-linux-musl.tar.gz | tar -xz bore
+          chmod +x bore
+
+          SUCCESS=1
+          (ncat -l -p 8000 -e /bin/sh || SUCCESS=0) &
+          (./bore local 8000 || SUCCESS=0) &
+
+          if [ "$SUCCESS" -ne 1 ]; then
+            echo "setup failed"
+
+            exit 1
+          fi
+          
+          echo "setup success, see output for the remote_port"
+
+          sleep 10
+
